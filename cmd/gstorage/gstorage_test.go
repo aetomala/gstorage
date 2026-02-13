@@ -199,6 +199,56 @@ var _ = Describe("Gstorage File Operations Library", func() {
 					Expect(err).ToNot(HaveOccurred())
 					Expect(len(data)).To(Equal(0))
 				})
+
+				It("should read large files", func() {
+					largeContent := strings.Repeat("X", 1024*1024) // 1MB
+					createTestFile(testFile, largeContent)
+
+					data, err := ReadFile(testFile)
+					Expect(err).NotTo(HaveOccurred())
+					Expect(len(data)).To(Equal(1024 * 1024))
+					Expect(string(data)).To(Equal(largeContent))
+				})
+
+				It("should read files with special characters", func() {
+					specialContent := "Line1\nLine2\t\tTabbed\rCarriage\x00Null"
+					createTestFile(testFile, specialContent)
+
+					data, err := ReadFile(testFile)
+					Expect(err).NotTo(HaveOccurred())
+					Expect(string(data)).To(Equal(specialContent))
+				})
+
+				It("should read files with unicode content", func() {
+					unicodeContent := "Hello 世界 🌍 Привет"
+					createTestFile(testFile, unicodeContent)
+
+					data, err := ReadFile(testFile)
+					Expect(err).NotTo(HaveOccurred())
+					Expect(string(data)).To(Equal(unicodeContent))
+				})
+			})
+
+			Context("when file does not exist", func() {
+				It("should return error", func() {
+					nonExistentFile := filepath.Join(tempDir, "nonexistent.txt")
+					data, err := ReadFile(nonExistentFile)
+
+					Expect(err).To(HaveOccurred())
+					Expect(len(data)).To(Equal(0))
+					Expect(os.IsNotExist(err)).To(BeTrue())
+				})
+			})
+
+			Context("when path is a directory", func() {
+				It("should return error", func() {
+					testDir := filepath.Join(tempDir, "testdir")
+					createTestDir(testDir)
+
+					data, err := ReadFile(testDir)
+					Expect(err).To(HaveOccurred())
+					Expect(len(data)).To(Equal(0))
+				})
 			})
 		})
 		Describe("WriteFile", func() {
@@ -334,6 +384,51 @@ var _ = Describe("Gstorage File Operations Library", func() {
 					Expect(err).NotTo(HaveOccurred())
 					Expect(fileExists(testDir)).To(BeFalse())
 				})
+
+				It("should remove empty directory", func() {
+					err := RemoveDirAll(testDir)
+					Expect(err).NotTo(HaveOccurred())
+					Expect(fileExists(testDir)).To(BeFalse())
+				})
+
+				It("should handle deeply nested directories", func() {
+					nestedPath := filepath.Join(testDir, "a", "b", "c", "d", "e")
+					createTestDir(nestedPath)
+					createTestFile(filepath.Join(nestedPath, "deep.txt"), "deep content")
+
+					err := RemoveDirAll(testDir)
+					Expect(err).NotTo(HaveOccurred())
+					Expect(fileExists(testDir)).To(BeFalse())
+				})
+
+				It("should handle directory with many files", func() {
+					for i := 0; i < 50; i++ {
+						createTestFile(filepath.Join(testDir, fmt.Sprintf("file_%d.txt", i)), fmt.Sprintf("content %d", i))
+					}
+
+					err := RemoveDirAll(testDir)
+					Expect(err).NotTo(HaveOccurred())
+					Expect(fileExists(testDir)).To(BeFalse())
+				})
+
+				It("should handle non-existent directory gracefully", func() {
+					nonExistentDir := filepath.Join(tempDir, "nonexistent_dir_12345")
+					err := RemoveDirAll(nonExistentDir)
+					// os.RemoveAll() succeeds silently for non-existent paths
+					Expect(err).NotTo(HaveOccurred())
+				})
+
+				It("should remove directory with mixed content", func() {
+					createTestDir(filepath.Join(testDir, "subdir1"))
+					createTestDir(filepath.Join(testDir, "subdir2"))
+					createTestFile(filepath.Join(testDir, "file1.txt"), "content1")
+					createTestFile(filepath.Join(testDir, "subdir1", "file2.txt"), "content2")
+					createTestFile(filepath.Join(testDir, "subdir2", "file3.txt"), "content3")
+
+					err := RemoveDirAll(testDir)
+					Expect(err).NotTo(HaveOccurred())
+					Expect(fileExists(testDir)).To(BeFalse())
+				})
 			})
 			Describe("CopyDir", func() {
 				var srcDir, dstDir string
@@ -356,6 +451,66 @@ var _ = Describe("Gstorage File Operations Library", func() {
 					Expect(fileExists(filepath.Join(dstDir, "subdir"))).To(BeTrue())
 					Expect(readFileContent(filepath.Join(dstDir, "file1.txt"))).To(Equal("content1"))
 					Expect(readFileContent(filepath.Join(dstDir, "subdir", "file2.txt"))).To(Equal("content2"))
+				})
+
+				It("should create destination directory if it doesn't exist", func() {
+					nonExistentDst := filepath.Join(tempDir, "nonexistent", "dst")
+					err := CopyDir(srcDir, nonExistentDst)
+					Expect(err).NotTo(HaveOccurred())
+					Expect(fileExists(nonExistentDst)).To(BeTrue())
+					Expect(readFileContent(filepath.Join(nonExistentDst, "file1.txt"))).To(Equal("content1"))
+				})
+
+				It("should fail when source is not a directory", func() {
+					srcFile := filepath.Join(tempDir, "notadir.txt")
+					createTestFile(srcFile, "content")
+					err := CopyDir(srcFile, dstDir)
+					Expect(err).To(HaveOccurred())
+				})
+
+				It("should fail when source directory does not exist", func() {
+					nonExistentSrc := filepath.Join(tempDir, "nonexistent")
+					err := CopyDir(nonExistentSrc, dstDir)
+					Expect(err).To(HaveOccurred())
+				})
+
+				It("should fail when destination is a file", func() {
+					destFile := filepath.Join(tempDir, "destfile.txt")
+					createTestFile(destFile, "existing")
+					err := CopyDir(srcDir, destFile)
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("not a directory"))
+				})
+
+				It("should handle deeply nested directories", func() {
+					nestedSrc := filepath.Join(tempDir, "nested_src")
+					nestedDst := filepath.Join(tempDir, "nested_dst")
+					createTestDir(filepath.Join(nestedSrc, "a", "b", "c", "d"))
+					createTestFile(filepath.Join(nestedSrc, "a", "b", "c", "d", "deep.txt"), "deep content")
+
+					err := CopyDir(nestedSrc, nestedDst)
+					Expect(err).NotTo(HaveOccurred())
+					Expect(readFileContent(filepath.Join(nestedDst, "a", "b", "c", "d", "deep.txt"))).To(Equal("deep content"))
+				})
+
+				It("should copy multiple files and directories", func() {
+					multiSrc := filepath.Join(tempDir, "multi_src")
+					multiDst := filepath.Join(tempDir, "multi_dst")
+					createTestDir(multiSrc)
+					createTestDir(filepath.Join(multiSrc, "dir1"))
+					createTestDir(filepath.Join(multiSrc, "dir2"))
+					createTestFile(filepath.Join(multiSrc, "file1.txt"), "content1")
+					createTestFile(filepath.Join(multiSrc, "file2.txt"), "content2")
+					createTestFile(filepath.Join(multiSrc, "dir1", "nested1.txt"), "nested1")
+					createTestFile(filepath.Join(multiSrc, "dir2", "nested2.txt"), "nested2")
+
+					err := CopyDir(multiSrc, multiDst)
+					Expect(err).NotTo(HaveOccurred())
+
+					Expect(fileExists(filepath.Join(multiDst, "file1.txt"))).To(BeTrue())
+					Expect(fileExists(filepath.Join(multiDst, "file2.txt"))).To(BeTrue())
+					Expect(fileExists(filepath.Join(multiDst, "dir1", "nested1.txt"))).To(BeTrue())
+					Expect(fileExists(filepath.Join(multiDst, "dir2", "nested2.txt"))).To(BeTrue())
 				})
 			})
 		})
@@ -524,6 +679,99 @@ var _ = Describe("Gstorage File Operations Library", func() {
 			err = WorkerPoolCopyDir(srcDir, dstDir, 2)
 
 			Expect(err).To(HaveOccurred())
+		})
+
+		It("should fail when source is not a directory", func() {
+			srcFile := filepath.Join(tempDir, "notadir.txt")
+			createTestFile(srcFile, "content")
+			err := WorkerPoolCopyDir(srcFile, dstDir, 2)
+			Expect(err).To(HaveOccurred())
+		})
+
+		It("should fail when source does not exist", func() {
+			nonExistentSrc := filepath.Join(tempDir, "nonexistent")
+			err := WorkerPoolCopyDir(nonExistentSrc, dstDir, 2)
+			Expect(err).To(HaveOccurred())
+		})
+
+		It("should fail when destination is a file", func() {
+			destFile := filepath.Join(tempDir, "destfile.txt")
+			createTestFile(destFile, "existing")
+			err := WorkerPoolCopyDir(srcDir, destFile, 2)
+			Expect(err).To(HaveOccurred())
+		})
+
+		It("should work with existing destination directory", func() {
+			existingDstDir := filepath.Join(tempDir, "existing_pool_dst")
+			createTestDir(existingDstDir)
+			err := WorkerPoolCopyDir(srcDir, existingDstDir, 3)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(fileExists(existingDstDir)).To(BeTrue())
+		})
+
+		It("should work with single worker", func() {
+			err := WorkerPoolCopyDir(srcDir, dstDir, 1)
+			Expect(err).NotTo(HaveOccurred())
+
+			entries, err := ListDir(srcDir)
+			Expect(err).NotTo(HaveOccurred())
+			for _, entry := range entries {
+				if !entry.IsDir() {
+					dstPath := filepath.Join(dstDir, entry.Name())
+					Expect(FileExists(dstPath)).To(BeTrue())
+				}
+			}
+		})
+
+		It("should work with many workers", func() {
+			err := WorkerPoolCopyDir(srcDir, dstDir, 16)
+			Expect(err).NotTo(HaveOccurred())
+
+			entries, err := ListDir(srcDir)
+			Expect(err).NotTo(HaveOccurred())
+			for _, entry := range entries {
+				if !entry.IsDir() {
+					dstPath := filepath.Join(dstDir, entry.Name())
+					Expect(FileExists(dstPath)).To(BeTrue())
+				}
+			}
+		})
+
+		It("should handle deeply nested directories", func() {
+			nestedSrc := filepath.Join(tempDir, "nested_pool_src_v2")
+			nestedDst := filepath.Join(tempDir, "nested_pool_dst_v2")
+			createTestDir(filepath.Join(nestedSrc, "a", "b", "c"))
+			createTestDir(nestedDst) // Pre-create dst
+			createTestFile(filepath.Join(nestedSrc, "a", "file1.txt"), "content1")
+			createTestFile(filepath.Join(nestedSrc, "a", "b", "file2.txt"), "content2")
+			createTestFile(filepath.Join(nestedSrc, "a", "b", "c", "file3.txt"), "content3")
+
+			err := WorkerPoolCopyDir(nestedSrc, nestedDst, 4)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(fileExists(filepath.Join(nestedDst, "a", "file1.txt"))).To(BeTrue())
+			Expect(fileExists(filepath.Join(nestedDst, "a", "b", "file2.txt"))).To(BeTrue())
+			Expect(fileExists(filepath.Join(nestedDst, "a", "b", "c", "file3.txt"))).To(BeTrue())
+		})
+
+		It("should handle many files with worker pool", func() {
+			manySrc := filepath.Join(tempDir, "many_pool_src")
+			manyDst := filepath.Join(tempDir, "many_pool_dst")
+			createTestDir(manySrc)
+			createTestDir(manyDst)
+
+			// Create 100 files
+			for i := 0; i < 100; i++ {
+				createTestFile(filepath.Join(manySrc, fmt.Sprintf("file_%d.txt", i)), fmt.Sprintf("content %d", i))
+			}
+
+			err := WorkerPoolCopyDir(manySrc, manyDst, 8)
+			Expect(err).NotTo(HaveOccurred())
+
+			// Verify a few files
+			Expect(fileExists(filepath.Join(manyDst, "file_0.txt"))).To(BeTrue())
+			Expect(fileExists(filepath.Join(manyDst, "file_50.txt"))).To(BeTrue())
+			Expect(fileExists(filepath.Join(manyDst, "file_99.txt"))).To(BeTrue())
 		})
 	})
 	// Integration Tests
