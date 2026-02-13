@@ -1,5 +1,9 @@
 # gstorage
 
+![Tests](https://github.com/aetomala/gstorage/actions/workflows/test.yml/badge.svg?branch=main)
+![Go Version](https://img.shields.io/badge/go-1.25+-blue.svg)
+![License](https://img.shields.io/badge/license-MIT-green.svg)
+
 **Production-grade file and directory operations library - exploring Go filesystem patterns and concurrent I/O abstractions**
 
 ## Purpose
