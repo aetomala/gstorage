@@ -211,21 +211,32 @@ if walkErr != nil {
 
 ## Testing Approach
 
-Comprehensive TDD with Ginkgo/Gomega (37 tests):
+Comprehensive TDD with Ginkgo/Gomega (62 tests, 76.4% coverage):
 
 **Test Coverage**:
-1. **File Operations** (14 tests) - Copy, move, delete, read, write with error cases
-2. **Directory Operations** (10 tests) - Listing, creation, removal, traversal
-3. **Metadata Operations** (8 tests) - Existence checks, sizes, MD5 hashing
-4. **Concurrency & Progress** (3 tests) - Progress tracking, worker pools, concurrent operations
+1. **File Operations** (19 tests) - Copy, move, delete, read, write with error cases and edge cases
+2. **Directory Operations** (23 tests) - Listing, creation, removal, traversal, deep nesting, bulk operations
+3. **Metadata Operations** (8 tests) - Existence checks, sizes, MD5 hashing with special characters and unicode
+4. **Concurrency & Progress** (7 tests) - Progress tracking, worker pools, concurrent operations with various worker counts
 5. **Integration Tests** (1 test) - Complete file operations workflow
-6. **Performance Tests** (1 test) - Efficiency with many small files
+6. **Performance Tests** (4 tests) - Efficiency with many files and large files
+
+**Coverage by Function**:
+- 100%: `ReadFile`, `ListDir`, `copyWorker`
+- 87.5%: `CopyFile`
+- 85.7%: `GetFileSize`
+- 83.3%: `RemoveFile`
+- 80%+: `MoveFile`, `CalculateFileMD5`
+- 75%+: `CreateDir`, `FileExists`, `CopyFileWithProgress`
 
 **Test Execution**:
 ```bash
-go test -v ./cmd/gstorage        # All tests with output
-go test -race ./cmd/gstorage    # Race detector (verifies thread safety)
-ginkgo -v ./cmd/gstorage        # Ginkgo-specific output format
+go test -v ./cmd/gstorage                                      # All tests with output
+go test -race ./cmd/gstorage                                  # Race detector (verifies thread safety)
+go test -v -coverprofile=coverage.out ./cmd/gstorage          # Generate coverage report
+go tool cover -html=coverage.out                              # View HTML coverage report
+ginkgo -v ./cmd/gstorage                                      # Ginkgo-specific output format
+ginkgo -v -race --cover ./cmd/gstorage                        # Ginkgo with race detector and coverage
 ```
 
 ## Running
