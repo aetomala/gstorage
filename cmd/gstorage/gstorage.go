@@ -310,13 +310,11 @@ func CopyFileWithProgress(src, dst string, chunkSize int) (<-chan int64, error) 
 	}
 
 	progressChan := make(chan int64, 10)
-	errChan := make(chan error, 1)
 
 	go func() {
 		defer srcFile.Close()
 		defer dstFile.Close()
 		defer close(progressChan)
-		defer close(errChan)
 
 		buffer := make([]byte, chunkSize)
 
@@ -325,7 +323,7 @@ func CopyFileWithProgress(src, dst string, chunkSize int) (<-chan int64, error) 
 			if n > 0 {
 				_, writeErr := dstFile.Write(buffer[:n])
 				if writeErr != nil {
-					errChan <- errors.New("write failed")
+					log.Println("Error writing to destination file:", writeErr)
 					return
 				}
 				progressChan <- int64(n)
@@ -335,12 +333,13 @@ func CopyFileWithProgress(src, dst string, chunkSize int) (<-chan int64, error) 
 				break
 			}
 			if err != nil {
-				return // Error: just close channel and exit
+				log.Println("Error reading source file:", err)
+				return
 			}
 		}
 	}()
 
-	return progressChan, <-errChan
+	return progressChan, nil
 }
 
 type copyJob struct {
